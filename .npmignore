@@ -1,0 +1,15 @@
+# Development files
+.git/
+.github/
+.gitignore
+test/
+*.test.js
+.eslintrc*
+.prettierrc*
+.editorconfig
+.vscode/
+
+# Build artifacts
+node_modules/
+coverage/
+.nyc_output/

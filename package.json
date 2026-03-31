@@ -1,0 +1,61 @@
+{
+  "name": "labelinn",
+  "version": "1.1.0",
+  "description": "Official Node.js SDK for the LabelInn Cloud Print API. Send labels to Zebra, TSC, and Honeywell thermal printers from any system.",
+  "keywords": [
+    "labelinn",
+    "label",
+    "printer",
+    "zebra",
+    "tsc",
+    "honeywell",
+    "zpl",
+    "barcode",
+    "shipping",
+    "thermal",
+    "thermal-printer",
+    "cloud-print",
+    "print-api",
+    "warehouse",
+    "logistics",
+    "ecommerce"
+  ],
+  "license": "MIT",
+  "author": "LabelInn <support@labelinn.com> (https://labelinn.com)",
+  "homepage": "https://labelinn.com/developers",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ArisHub/labelinn-node.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ArisHub/labelinn-node/issues"
+  },
+  "funding": {
+    "url": "https://labelinn.com"
+  },
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./lib/index.js",
+      "types": "./lib/index.d.ts"
+    }
+  },
+  "bin": {
+    "labelinn": "bin/cli.js"
+  },
+  "files": [
+    "lib/",
+    "bin/",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "test": "node test/basic.js",
+    "prepublishOnly": "node -e \"require('./lib/index.js')\""
+  }
+}
