@@ -1,6 +1,6 @@
 {
   "name": "labelinn",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "description": "Official Node.js SDK for the LabelInn Cloud Print API. Send labels to Zebra, TSC, and Honeywell thermal printers from any system.",
   "keywords": [
     "labelinn",
@@ -25,10 +25,10 @@
   "homepage": "https://labelinn.com/developers",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ArisHub/labelinn-node.git"
+    "url": "git+https://github.com/labelcraft31/labelinn-node.git"
   },
   "bugs": {
-    "url": "https://github.com/ArisHub/labelinn-node/issues"
+    "url": "https://github.com/labelcraft31/labelinn-node/issues"
   },
   "funding": {
     "url": "https://labelinn.com"

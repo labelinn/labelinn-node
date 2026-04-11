@@ -9,6 +9,7 @@ declare class LabelInn {
   readonly fleet: LabelInn.FleetResource;
   readonly designs: LabelInn.DesignsResource;
   readonly webhooks: LabelInn.WebhooksResource;
+  readonly connect: LabelInn.ConnectResource;
   readonly isTestMode: boolean;
 }
 
@@ -321,6 +322,96 @@ declare namespace LabelInn {
 
   class LabelInnRateLimitError extends LabelInnError {
     retryAfter: number;
+  }
+
+  // ── Connect (Data Ingestion) ──
+
+  interface IngestParams {
+    payload: string;
+    source_id?: string;
+    format?: 'xml' | 'csv' | 'json';
+    name?: string;
+    config?: Record<string, unknown>;
+  }
+
+  interface TestParseParams {
+    payload: string;
+    format?: 'xml' | 'csv' | 'json';
+    config?: Record<string, unknown>;
+  }
+
+  interface ConnectSource extends ApiResponse {
+    id: string;
+    name: string;
+    description?: string;
+    format?: string;
+    config?: Record<string, unknown>;
+    record_count?: number;
+    created_at?: string;
+    updated_at?: string;
+  }
+
+  interface ConnectSourceList extends ApiResponse {
+    sources: ConnectSource[];
+    next_page_token?: string;
+  }
+
+  interface CreateSourceParams {
+    name: string;
+    description?: string;
+    format?: 'xml' | 'csv' | 'json';
+    config?: Record<string, unknown>;
+  }
+
+  interface UpdateSourceParams {
+    name?: string;
+    description?: string;
+    config?: Record<string, unknown>;
+  }
+
+  interface ConnectRecord extends ApiResponse {
+    id: string;
+    data: Record<string, string>;
+    source_id: string;
+    ingest_id?: string;
+    created_at?: string;
+  }
+
+  interface ConnectRecordList extends ApiResponse {
+    records: ConnectRecord[];
+    next_page_token?: string;
+  }
+
+  interface ConnectSchema extends ApiResponse {
+    fields: Array<{ name: string; type?: string; sample_values?: string[] }>;
+  }
+
+  interface ConnectMappings extends ApiResponse {
+    mappings: Record<string, string>;
+  }
+
+  interface ConnectPrintParams {
+    printer_id: string;
+    design_id: string;
+    record_ids?: string[];
+    ingest_id?: string;
+    copies?: number;
+    field_mappings?: Record<string, string>;
+  }
+
+  class ConnectResource {
+    ingest(params: IngestParams): Promise<ApiResponse>;
+    testParse(params: TestParseParams): Promise<ApiResponse>;
+    createSource(params: CreateSourceParams): Promise<ConnectSource>;
+    listSources(query?: Record<string, string>): Promise<ConnectSourceList>;
+    getSource(sourceId: string): Promise<ConnectSource>;
+    updateSource(sourceId: string, params: UpdateSourceParams): Promise<ConnectSource>;
+    deleteSource(sourceId: string): Promise<ApiResponse>;
+    listRecords(sourceId: string, query?: { limit?: number; page_token?: string; ingest_id?: string }): Promise<ConnectRecordList>;
+    getSchema(sourceId: string): Promise<ConnectSchema>;
+    getMappings(sourceId: string): Promise<ConnectMappings>;
+    updateMappings(sourceId: string, mappings: Record<string, string>): Promise<ConnectMappings>;
+    print(sourceId: string, params: ConnectPrintParams): Promise<ApiResponse>;
   }
 }
 

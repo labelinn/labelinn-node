@@ -20,7 +20,7 @@
 const LabelInn = require('../lib/index.js');
 
 const HELP = `
-LabelInn CLI v1.1.0 — Developer testing tool
+LabelInn CLI v1.2.0 — Developer testing tool
 
 SETUP:
   Set your API key as an environment variable:
@@ -41,6 +41,11 @@ COMMANDS:
   printers <id> --identify             Flash/beep the printer
   printers <id> --update --name <n>    Update printer name
   printers <id> --media <json>         Set media definition (JSON)
+
+  discover                             Start printer auto-discovery
+  discover --device <id>               Discover on a specific device
+  discover status <sessionId>          Poll discovery results
+  discover add <sessionId> --address <addr>  Add printer to fleet
 
   groups                               List printer groups
   groups <id>                          Get group details
@@ -669,6 +674,62 @@ async function cmdConnect(client, args, flags) {
   }
 }
 
+async function cmdDiscover(client, args, flags) {
+  const subCmd = args._[1];
+
+  if (subCmd === 'status') {
+    const sessionId = args._[2];
+    if (!sessionId) { console.error('Usage: labelinn discover status <sessionId>'); process.exit(1); }
+    const result = await client.fleet.getDiscoveryStatus(sessionId);
+    const data = result.data || result;
+    if (flags.json) {
+      output(result, flags);
+    } else {
+      console.log(`Session: ${data.session_id || sessionId}`);
+      console.log(`Status:  ${data.status}`);
+      const printers = data.printers || [];
+      if (printers.length > 0) {
+        console.log(`Found ${printers.length} printer(s):`);
+        table(printers, ['name', 'address', 'brand', 'connection_type', 'is_thermal']);
+      } else {
+        console.log('No printers found yet.');
+      }
+    }
+  } else if (subCmd === 'add') {
+    const sessionId = args._[2];
+    if (!sessionId || !flags.address) {
+      console.error('Usage: labelinn discover add <sessionId> --address <addr> [--name <name>]');
+      process.exit(1);
+    }
+    const params = { address: flags.address };
+    if (flags.name) params.name = flags.name;
+    const result = await client.fleet.addDiscoveredPrinter(sessionId, params);
+    const data = result.data || result;
+    if (flags.json) {
+      output(result, flags);
+    } else {
+      console.log(`✓ Printer added to fleet`);
+      console.log(`  ID:      ${data.id}`);
+      console.log(`  Name:    ${data.name}`);
+      console.log(`  Status:  ${data.status}`);
+    }
+  } else {
+    // Start discovery
+    const params = {};
+    if (flags.device) params.device_id = flags.device;
+    const result = await client.fleet.startDiscovery(params);
+    const data = result.data || result;
+    if (flags.json) {
+      output(result, flags);
+    } else {
+      console.log(`✓ Discovery session started`);
+      console.log(`  Session ID: ${data.session_id}`);
+      console.log(`  Status:     ${data.status}`);
+      console.log(`\nPoll results with: labelinn discover status ${data.session_id}`);
+    }
+  }
+}
+
 async function cmdWebhooks(client, args, flags) {
   const subCmd = args._[1];
   if (subCmd === 'add') {
@@ -766,6 +827,7 @@ async function main() {
 
   try {
     switch (command) {
+      case 'discover': await cmdDiscover(client, args, args.flags); break;
       case 'test':     await cmdTest(client, args.flags); break;
       case 'printers': await cmdPrinters(client, args, args.flags); break;
       case 'groups':   await cmdGroups(client, args, args.flags); break;
