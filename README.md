@@ -18,6 +18,8 @@ Official Node.js SDK for the [LabelInn](https://labelinn.com) Cloud Print API. S
 - [Designs (Templates)](#designs-templates)
 - [Webhooks](#webhooks)
 - [Data Connect](#data-connect)
+- [Product Passports, GHS and UFI](#product-passports-ghs-and-ufi)
+- [Local Edge API (LAN, pinned TLS)](#local-edge-api-lan-pinned-tls)
 - [Rate Limits](#rate-limits)
 - [Error Handling](#error-handling)
 - [CLI Tool](#cli-tool)
@@ -83,12 +85,81 @@ const job = await client.print.create({
 
 ### Send an image label
 ```js
-// From a URL (HTTPS only, max 500KB)
+// From a URL (HTTPS only, max 25 MB; the API stages files over 500 KB itself)
 const job = await client.print.create({
   printer_id: 'prt_abc123',
   payload_type: 'image',
   image_url: 'https://example.com/labels/shipping.png',
 });
+```
+
+<!-- UNIFIED PRINTERS R3 -->
+### Large files (PDF / images up to 25 MB)
+
+Inline `payload_data` is capped at 500 KB of base64. `printFile()` picks the
+route for you: small files go inline exactly as before, larger ones (up to
+25 MB) are uploaded first and printed by `upload_id`.
+
+```js
+// A path or a Buffer; PDF, PNG, JPEG, GIF, BMP, WebP or TIFF (type read from the bytes)
+const job = await client.print.printFile('prt_abc123', './invoice.pdf', {
+  copies: 2,
+  office: { paper: 'a4' }, // office printers; or media_width_mm / media_height_mm
+});
+
+// Or step by step:
+const uploadId = await client.print.uploadFile(buffer, 'application/pdf', 'invoice.pdf');
+await client.print.create({ printer_id: 'prt_abc123', payload_type: 'image', upload_id: uploadId });
+const upload = await client.print.getUpload(uploadId); // { status: 'pending' | 'ready', ... }
+```
+
+`uploadFile()` calls `POST /v1/print/uploads` (content type, size, SHA-256),
+then PUTs the bytes to the signed storage URL with exactly the returned headers
+and no `Authorization` header (the URL is valid 15 minutes). Files over 25 MB
+are refused locally with `PAYLOAD_TOO_LARGE`. Upload errors: `UPLOAD_NOT_FOUND`,
+`UPLOAD_NOT_RECEIVED`, `UPLOAD_EXPIRED`, `UPLOAD_HASH_MISMATCH`,
+`UPLOAD_SIZE_MISMATCH`, `UPLOAD_TYPE_MISMATCH`, `UNSUPPORTED_MEDIA_TYPE`,
+`UPLOAD_UNAVAILABLE`; `PRINTER_APP_TOO_OLD` when the PC that owns the printer
+runs a LabelInn version that cannot print uploaded files.
+
+### Office (A4 / Letter) printers
+Office printers (`kind: 'office'` in `fleet.list()`) take `template` jobs placed on a
+label sheet, and `image` jobs (a PDF or an image, one whole page each) when the
+printer's `office.payload_types` includes `'image'`. `zpl` is refused with
+`OFFICE_PRINTER_NEEDS_DESIGN`.
+
+```js
+await client.print.create({
+  printer_id: 'prt_office',
+  payload_type: 'template',
+  design_id: 'dsg_address_label',
+  data: rows,
+  copies: 1,
+  office: {
+    sheet: 'a4-21',          // or grid: { cols, rows, label_width_mm, label_height_mm, ... }
+    start_at: 4,             // first free cell of a part-used sheet
+    collate: false,
+    color: 'black_white',    // 'color' | 'grayscale' | 'black_white'
+    fill_order: 'top_right_rl', // top_left_lr (default) | top_right_rl | bottom_left_lr | bottom_right_rl
+  },
+});
+// LabelInn.OFFICE_FILL_ORDERS lists the valid fill_order values.
+```
+
+### Receipt printers
+Receipt / POS printers (`kind: 'receipt'`: ESC/POS, Phomemo) report `receipt_roll_mm`
+(58 or 80) and `receipt_printable_mm` (48 or 72) in `fleet.list()`. Send a `template`
+or an `image`; a wider design is scaled to the roll and the job reports
+`receipt_fit`. `payload_type: 'zpl'` is refused with `PRINTER_LANGUAGE_MISMATCH`
+(also for DYMO and Brother QL printers).
+
+### Epson colour: send a template, not a bare image
+Epson ColorWorks (`kind: 'color'`) cannot print a bare image. `payload_type: 'image'`
+is refused with `400 PRINTER_LANGUAGE_MISMATCH` (`accepted_payload_types: ['template']`).
+Put the image in a design and print the design:
+
+```js
+await client.print.create({ printer_id: 'prt_epson', payload_type: 'template', design_id: 'dsg_photo_label' });
 ```
 
 ### Print from a template
@@ -117,10 +188,11 @@ const job = await client.print.create(
 ### List & manage jobs
 ```js
 // List recent jobs
-const { jobs } = await client.print.list({ limit: 10 });
+const jobs = await client.print.list({ limit: 10 });
+// Next page: client.print.list({ limit: 10, page_token: jobs._pagination?.next_page_token })
 
 // Filter by status
-const { jobs: failed } = await client.print.list({ status: 'failed' });
+const failed = await client.print.list({ status: 'failed' });
 
 // Get job details
 const job = await client.print.get('job_abc123');
@@ -136,10 +208,10 @@ await client.print.reprint('job_abc123', { printer_id: 'prt_backup' });
 
 ```js
 // List all printers
-const { printers } = await client.fleet.list();
+const printers = await client.fleet.list();
 
 // Filter by status
-const { printers: online } = await client.fleet.list({ status: 'online' });
+const online = await client.fleet.list({ status: 'online' });
 
 // Get printer details
 const printer = await client.fleet.get('prt_abc123');
@@ -147,13 +219,20 @@ const printer = await client.fleet.get('prt_abc123');
 // Quick status check
 const status = await client.fleet.status('prt_abc123');
 console.log(`${status.status} — Paper: ${status.paper_status}`);
+
+// Talk to the printer: send a command and get its answer back
+const answer = await client.fleet.command('prt_abc123', 'STATUS');
+console.log(answer.response_text);
+
+// Lock a printer (operators see the reason), or restrict who may use it
+await client.fleet.update('prt_abc123', { is_locked: true, lock_reason: 'Head cleaning' });
 ```
 
 ## Designs (Templates)
 
 ```js
 // List designs
-const { designs } = await client.designs.list();
+const designs = await client.designs.list();
 
 // Get design with elements
 const design = await client.designs.get('dsg_abc123');
@@ -191,6 +270,32 @@ await client.designs.print('dsg_abc123', {
 });
 ```
 
+## Workflows
+
+Build, test and trigger visual label workflows from code.
+
+```js
+// Dry-run with a sample record — nothing prints
+const result = await client.workflows.test('wf_abc123', { sku: 'A-1042', qty: 2 });
+console.log(result.trace);
+
+// Mint a signed inbound trigger once and store the secret
+const trigger = await client.workflows.createTrigger('wf_abc123', { signed: true });
+
+// Then, from your system, run the workflow with a record
+await client.workflows.fire('wf_abc123', trigger.token,
+  { order_id: 'ORD-9876', sku: 'A-1042' },
+  { secret: trigger.secret });
+```
+
+## Print History
+
+```js
+const history = await client.audit.printHistory({ printerId: 'prt_abc123', status: 'completed', limit: 50 });
+const entry = await client.audit.printHistoryEntry('job_abc123');
+const check = await client.audit.verifyPrint('job_abc123', { expect_copies: 2 });
+```
+
 ## Webhooks
 
 ```js
@@ -205,7 +310,7 @@ const webhook = await client.webhooks.create({
 console.log('Signing secret:', webhook.signing_secret);
 
 // List subscriptions
-const { webhooks } = await client.webhooks.list();
+const webhooks = await client.webhooks.list();
 
 // Send a test ping
 await client.webhooks.test(webhook.id);
@@ -328,14 +433,72 @@ await client.connect.updateMappings('src_abc123', {
 ### Print from Connector
 
 ```js
-const printResult = await client.connect.print({
-  source_id: 'src_abc123',
+// From a given source: rows 1-25, one label per row
+const printResult = await client.connect.print('src_abc123', {
   design_id: 'dsg_shipping',
   printer_id: 'prt_warehouse1',
-  copies: 1,
+  row_start: 1,
+  row_count: 25,
 });
-console.log(`Created ${printResult.count} print jobs`);
+
+// Or let the design's own bound data source be used
+await client.connect.printDesign({ design_id: 'dsg_shipping', printer_id: 'prt_warehouse1' });
 ```
+
+### Custom API connections
+
+```js
+const conn = await client.connect.custom.create({
+  name: 'My cargo API', kind: 'cargo', baseUrl: 'https://api.example-cargo.com',
+  manifest: { auth: { type: 'bearer', credential: 'token' }, operations: [/* ... */] },
+  credentials: { token: process.env.CARGO_TOKEN },
+});
+await client.connect.custom.execute(conn.id, {
+  operationId: 'createShipment', input: { orderId: 'A-1' },
+  confirmSideEffect: true, idempotencyKey: 'order-A-1',
+});
+```
+
+## Product Passports, GHS and UFI
+
+```js
+await client.passport.update({ gtin: '09506000134352', serial: 'SN1', fields: [{ key: 'state_of_health', value: 92 }] });
+await client.passport.setPage({ gtin: '09506000134352', brand: { name: 'Acme', accent: '#1f7a4d' } });
+const passport = await client.passport.resolve('01/09506000134352/21/SN1');   // public JSON
+
+const ghs = await client.labels.preview({ data: { h_codes: ['H225', 'H319'], languages: ['en'] } });
+const { ufi } = await client.ufi.generate({ countryCode: 'DE', vat: 'DE123456789', formulationNumber: 4521 });
+```
+
+## Local Edge API (LAN, pinned TLS)
+
+Every PC running the LabelInn desktop app can serve a local API on port 6631.
+`LabelInnEdge` reads `~/.labelinn/edge.json` (written by the app) for the address
+and token. When the PC serves HTTPS with its own self-signed certificate, the file
+carries `tlsSha256` and the client **pins** it: the TLS handshake is checked
+against that SHA-256 before any byte of the request is sent, and a mismatch
+throws `LabelInnEdgePinError`. PCs without TLS (or older app versions) keep
+working over plain http.
+
+```js
+const { LabelInnEdge } = require('labelinn');
+
+const edge = LabelInnEdge.fromDescriptor();                 // this PC
+// another PC: token and fingerprint from the app's "Copy token" / device list
+const remote = new LabelInnEdge({ host: '192.168.1.40', token: 'EDGE_TOKEN', tlsSha256: '3f1c...e9' });
+
+const { jobId } = await edge.print({ printerId: 'usb_zebra_01', payloadType: 'zpl', payloadData: '^XA^XZ' });
+const result = await edge.getJob(jobId);                    // 404 until processed
+const printers = await edge.listPrinters({ includePeers: false });
+```
+
+Other methods: `health()`, `listPeers()`, `startDiscovery()`, `getDiscovery()`,
+`listDesigns()`, `getDesign()`, `scheduleStatus()`, `scheduleRunNow()`,
+`auditRecent()`.
+
+MQTT note: the app's built-in broker only accepts `labelinn/cmd/*` commands from a
+client that logs in with the configured MQTT username and password (or from the
+same PC).
 
 ## Rate Limits
 

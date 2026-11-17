@@ -20,7 +20,7 @@
 const LabelInn = require('../lib/index.js');
 
 const HELP = `
-LabelInn CLI v1.2.0 — Developer testing tool
+LabelInn CLI v2.0.0 — Developer testing tool
 
 SETUP:
   Set your API key as an environment variable:
